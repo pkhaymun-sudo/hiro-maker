@@ -1,11 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>AR Solar System - Hiro Marker</title>
+  <title>Simple Mobile AR Lab - Motor Status</title>
 
-  <!-- A-Frame 1.6.0 & AR.js 3.4.7 -->
+  <!-- Open-source libraries. The versions are pinned so A-Frame and AR.js match. -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
 
@@ -14,11 +14,8 @@
     body {
       margin: 0;
       overflow: hidden;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0b0f19;
-      color: #ffffff;
-      user-select: none;
-      -webkit-user-select: none;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111;
     }
 
     #top-panel {
@@ -27,139 +24,116 @@
       left: 50%;
       transform: translateX(-50%);
       z-index: 20;
-      width: min(92vw, 480px);
-      padding: 10px 16px;
+      width: min(92vw, 520px);
+      padding: 10px 14px;
       border-radius: 12px;
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      color: #f8fafc;
+      background: rgba(0, 0, 0, 0.68);
+      color: white;
       text-align: center;
-      font-size: 14px;
+      font-size: 15px;
       line-height: 1.4;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    }
-
-    #top-panel .hint {
-      display: block;
-      margin-top: 4px;
-      font-size: 12px;
-      color: #94a3b8;
+      backdrop-filter: blur(4px);
     }
 
     #controls {
       position: fixed;
       left: 0;
       right: 0;
-      bottom: 20px;
+      bottom: 18px;
       z-index: 20;
       display: flex;
       justify-content: center;
-      gap: 12px;
-      padding: 0 16px;
+      gap: 10px;
+      padding: 0 12px;
     }
 
-    .btn {
-      min-width: 140px;
+    button {
+      min-width: 132px;
       min-height: 48px;
       border: 0;
       border-radius: 12px;
-      padding: 10px 18px;
-      font-size: 15px;
+      padding: 10px 14px;
+      font-size: 16px;
       font-weight: 700;
       cursor: pointer;
       touch-action: manipulation;
-      transition: transform 0.1s ease, filter 0.2s ease;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
     }
 
-    .btn:active {
-      transform: scale(0.96);
-    }
+    #run-button { background: #ffffff; color: #111111; }
+    #status-button { background: #ffd54f; color: #111111; }
 
-    #pause-btn {
-      background: #ef4444;
-      color: #ffffff;
-    }
-
-    #pause-btn.paused {
-      background: #10b981;
-    }
-
-    #speed-btn {
-      background: #3b82f6;
-      color: #ffffff;
+    .hint {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      opacity: 0.8;
     }
   </style>
 
   <script>
-    // State management for Solar System AR
-    window.solarState = {
-      isPaused: false,
-      speedMultiplier: 1.0,
-      speeds: [1.0, 2.0, 4.0],
-      currentSpeedIndex: 0
-    };
-
-    // Component: Orbit motion around center
-    AFRAME.registerComponent('orbit-motion', {
+    // A tiny reusable component that rotates an object without extra libraries.
+    AFRAME.registerComponent('spin-control', {
       schema: {
-        speed: { type: 'number', default: 30 }
+        axis: { type: 'string', default: 'y' },
+        speed: { type: 'number', default: 180 },
+        active: { type: 'boolean', default: true }
       },
-      tick: function (_time, deltaMs) {
-        if (window.solarState.isPaused || !deltaMs) return;
-        const deg = (this.data.speed * window.solarState.speedMultiplier * deltaMs) / 1000;
-        this.el.object3D.rotation.y += THREE.MathUtils.degToRad(deg);
-      }
-    });
 
-    // Component: Self spin on axis
-    AFRAME.registerComponent('self-spin', {
-      schema: {
-        speed: { type: 'number', default: 45 }
-      },
       tick: function (_time, deltaMs) {
-        if (window.solarState.isPaused || !deltaMs) return;
-        const deg = (this.data.speed * window.solarState.speedMultiplier * deltaMs) / 1000;
-        this.el.object3D.rotation.y += THREE.MathUtils.degToRad(deg);
+        if (!this.data.active || !deltaMs) return;
+
+        const radians = THREE.MathUtils.degToRad(this.data.speed * deltaMs / 1000);
+        const axis = this.data.axis;
+
+        if (axis === 'x') this.el.object3D.rotation.x += radians;
+        if (axis === 'y') this.el.object3D.rotation.y += radians;
+        if (axis === 'z') this.el.object3D.rotation.z += radians;
       }
     });
 
     window.addEventListener('DOMContentLoaded', () => {
       const marker = document.querySelector('#hiro-marker');
+      const shaft = document.querySelector('#shaft');
+      const motorBody = document.querySelector('#motor-body');
+      const warningLamp = document.querySelector('#warning-lamp');
+      const arLabel = document.querySelector('#ar-label');
       const topPanel = document.querySelector('#top-panel');
-      const pauseBtn = document.querySelector('#pause-btn');
-      const speedBtn = document.querySelector('#speed-btn');
+      const runButton = document.querySelector('#run-button');
+      const statusButton = document.querySelector('#status-button');
+
+      let running = true;
+      let warning = false;
 
       marker.addEventListener('markerFound', () => {
-        topPanel.innerHTML = 'พบ Hiro Marker แล้ว — ระบบสุริยะกำลังทำงาน<span class="hint">ใช้ปุ่มด้านล่างเพื่อหยุดหรือเร่งความเร็ววงโคจร</span>';
+        topPanel.innerHTML = 'พบ Hiro Marker แล้ว — โมเดลมอเตอร์พร้อมใช้งาน<span class="hint">แตะปุ่มด้านล่างเพื่อทดลองควบคุม</span>';
       });
 
       marker.addEventListener('markerLost', () => {
-        topPanel.innerHTML = 'เล็งกล้องไปที่ Hiro Marker<span class="hint">วาง Marker บนระนาบสว่างเพื่อให้ระบบตรวจจับได้ชัดเจน</span>';
+        topPanel.innerHTML = 'เล็งกล้องไปที่ Hiro Marker<span class="hint">วาง Marker บนโต๊ะที่มีแสงเพียงพอและให้เห็นกรอบดำครบทั้งสี่ด้าน</span>';
       });
 
-      // Toggle Pause / Resume
-      pauseBtn.addEventListener('click', () => {
-        window.solarState.isPaused = !window.solarState.isPaused;
-        if (window.solarState.isPaused) {
-          pauseBtn.textContent = '▶ เริ่มหมุนต่อ';
-          pauseBtn.classList.add('paused');
+      runButton.addEventListener('click', () => {
+        running = !running;
+        shaft.setAttribute('spin-control', 'active', running);
+        runButton.textContent = running ? 'หยุดมอเตอร์' : 'เริ่มมอเตอร์';
+      });
+
+      statusButton.addEventListener('click', () => {
+        warning = !warning;
+
+        if (warning) {
+          motorBody.setAttribute('color', '#ef5350');
+          warningLamp.setAttribute('color', '#ff1744');
+          warningLamp.setAttribute('material', 'emissive', '#ff1744');
+          arLabel.setAttribute('value', 'MOTOR M1\nSTATUS: WARNING');
+          statusButton.textContent = 'เปลี่ยนเป็นปกติ';
         } else {
-          pauseBtn.textContent = '⏸ หยุดการหมุน';
-          pauseBtn.classList.remove('paused');
+          motorBody.setAttribute('color', '#1976d2');
+          warningLamp.setAttribute('color', '#00e676');
+          warningLamp.setAttribute('material', 'emissive', '#00c853');
+          arLabel.setAttribute('value', 'MOTOR M1\nSTATUS: NORMAL');
+          statusButton.textContent = 'จำลองคำเตือน';
         }
-      });
-
-      // Cycle Speed: 1x -> 2x -> 4x
-      speedBtn.addEventListener('click', () => {
-        window.solarState.currentSpeedIndex = (window.solarState.currentSpeedIndex + 1) % window.solarState.speeds.length;
-        window.solarState.speedMultiplier = window.solarState.speeds[window.solarState.currentSpeedIndex];
-        speedBtn.textContent = '⚡ เร่งความเร็ว: ' + window.solarState.speedMultiplier + 'x';
       });
     });
   </script>
@@ -168,12 +142,12 @@
 <body>
   <div id="top-panel">
     เล็งกล้องไปที่ Hiro Marker
-    <span class="hint">อนุญาตให้เว็บใช้กล้องเมื่อเปิดบนสมาร์ตโฟน</span>
+    <span class="hint">อนุญาตให้เว็บไซต์ใช้กล้องเมื่อเบราว์เซอร์ถาม</span>
   </div>
 
   <div id="controls">
-    <button id="pause-btn" class="btn" type="button">⏸ หยุดการหมุน</button>
-    <button id="speed-btn" class="btn" type="button">⚡ เร่งความเร็ว: 1x</button>
+    <button id="run-button" type="button">หยุดมอเตอร์</button>
+    <button id="status-button" type="button">จำลองคำเตือน</button>
   </div>
 
   <a-scene
@@ -182,9 +156,6 @@
     renderer="logarithmicDepthBuffer: true; antialias: true; colorManagement: true"
     arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false"
   >
-    <!-- Lighting -->
-    <a-light type="ambient" color="#d1d5db" intensity="1.2"></a-light>
-
     <a-marker
       id="hiro-marker"
       preset="hiro"
@@ -194,80 +165,79 @@
       smooth-tolerance="0.01"
       smooth-threshold="3"
     >
-      <!-- Base Plate on Marker -->
-      <a-circle position="0 0.02 0" rotation="-90 0 0" radius="1.35" color="#030712" opacity="0.85"></a-circle>
+      <!-- Floor plate -->
+      <a-box
+        position="0 0.04 0"
+        width="1.35"
+        height="0.08"
+        depth="0.85"
+        color="#455a64"
+        roughness="0.8"
+      ></a-box>
 
-      <!-- Center: The Sun -->
-      <a-entity position="0 0.35 0">
-        <a-sphere
-          radius="0.18"
-          color="#ffb703"
-          material="emissive: #fb8500; emissiveIntensity: 0.9; roughness: 0.3"
-          self-spin="speed: 20"
-        ></a-sphere>
-        <!-- Sun point light illuminating planets -->
-        <a-light type="point" intensity="2.0" distance="3" color="#ffedd5" position="0 0 0"></a-light>
-        <!-- Sun Label -->
-        <a-text value="SUN" align="center" position="0 0.28 0" scale="0.35 0.35 0.35" color="#fef08a" side="double"></a-text>
+      <!-- Two mounting feet -->
+      <a-box position="-0.42 0.15 0" width="0.18" height="0.18" depth="0.55" color="#263238"></a-box>
+      <a-box position="0.42 0.15 0" width="0.18" height="0.18" depth="0.55" color="#263238"></a-box>
+
+      <!-- Motor housing: cylinder lies along X axis -->
+      <a-cylinder
+        id="motor-body"
+        position="0 0.47 0"
+        rotation="0 0 90"
+        radius="0.32"
+        height="0.72"
+        segments-radial="32"
+        color="#1976d2"
+        metalness="0.25"
+        roughness="0.55"
+      ></a-cylinder>
+
+      <!-- Rear cap -->
+      <a-cylinder
+        position="-0.40 0.47 0"
+        rotation="0 0 90"
+        radius="0.27"
+        height="0.12"
+        color="#90a4ae"
+      ></a-cylinder>
+
+      <!-- Shaft assembly: parent fixes the shaft direction; child spins locally -->
+      <a-entity position="0.52 0.47 0" rotation="0 0 90">
+        <a-cylinder
+          id="shaft"
+          radius="0.09"
+          height="0.42"
+          color="#cfd8dc"
+          metalness="0.8"
+          roughness="0.2"
+          spin-control="axis: y; speed: 220; active: true"
+        >
+          <a-box position="0 0.12 0.09" width="0.05" height="0.18" depth="0.06" color="#ffeb3b"></a-box>
+        </a-cylinder>
       </a-entity>
 
-      <!-- 1. Mercury (ดาวพุธ) -->
-      <a-ring radius-inner="0.318" radius-outer="0.322" rotation="-90 0 0" position="0 0.35 0" color="#64748b" opacity="0.55"></a-ring>
-      <a-entity position="0 0.35 0" orbit-motion="speed: 85">
-        <a-sphere position="0.32 0 0" radius="0.035" color="#94a3b8" self-spin="speed: 30"></a-sphere>
-      </a-entity>
+      <!-- Status lamp -->
+      <a-sphere
+        id="warning-lamp"
+        position="0 0.87 0"
+        radius="0.075"
+        color="#00e676"
+        material="emissive: #00c853; emissiveIntensity: 0.8"
+      ></a-sphere>
 
-      <!-- 2. Venus (ดาวศุกร์) -->
-      <a-ring radius-inner="0.478" radius-outer="0.482" rotation="-90 0 0" position="0 0.35 0" color="#64748b" opacity="0.55"></a-ring>
-      <a-entity position="0 0.35 0" orbit-motion="speed: 62">
-        <a-sphere position="0.48 0 0" radius="0.05" color="#fde047" self-spin="speed: 25"></a-sphere>
-      </a-entity>
-
-      <!-- 3. Earth & Moon (โลกและดวงจันทร์) -->
-      <a-ring radius-inner="0.658" radius-outer="0.662" rotation="-90 0 0" position="0 0.35 0" color="#3b82f6" opacity="0.65"></a-ring>
-      <a-entity position="0 0.35 0" orbit-motion="speed: 46">
-        <!-- Earth -->
-        <a-entity position="0.66 0 0">
-          <a-sphere radius="0.06" color="#38bdf8" self-spin="speed: 70"></a-sphere>
-          <!-- Moon Orbit -->
-          <a-entity orbit-motion="speed: 150">
-            <a-sphere position="0.10 0 0" radius="0.018" color="#f1f5f9"></a-sphere>
-          </a-entity>
-        </a-entity>
-      </a-entity>
-
-      <!-- 4. Mars (ดาวอังคาร) -->
-      <a-ring radius-inner="0.838" radius-outer="0.842" rotation="-90 0 0" position="0 0.35 0" color="#64748b" opacity="0.55"></a-ring>
-      <a-entity position="0 0.35 0" orbit-motion="speed: 35">
-        <a-sphere position="0.84 0 0" radius="0.045" color="#f87171" self-spin="speed: 45"></a-sphere>
-      </a-entity>
-
-      <!-- 5. Jupiter (ดาวพฤหัสบดี) -->
-      <a-ring radius-inner="1.038" radius-outer="1.042" rotation="-90 0 0" position="0 0.35 0" color="#64748b" opacity="0.55"></a-ring>
-      <a-entity position="0 0.35 0" orbit-motion="speed: 22">
-        <a-sphere position="1.04 0 0" radius="0.095" color="#fb923c" self-spin="speed: 60"></a-sphere>
-      </a-entity>
-
-      <!-- 6. Saturn with Ring (ดาวเสาร์พร้อมวงแหวน) -->
-      <a-ring radius-inner="1.258" radius-outer="1.262" rotation="-90 0 0" position="0 0.35 0" color="#64748b" opacity="0.55"></a-ring>
-      <a-entity position="0 0.35 0" orbit-motion="speed: 15">
-        <a-entity position="1.26 0 0">
-          <a-sphere radius="0.075" color="#facc15" self-spin="speed: 55"></a-sphere>
-          <!-- Saturn's Planetary Ring -->
-          <a-ring
-            radius-inner="0.095"
-            radius-outer="0.15"
-            rotation="68 25 0"
-            color="#eab308"
-            opacity="0.85"
-            side="double"
-          ></a-ring>
-        </a-entity>
-      </a-entity>
-
+      <!-- AR information label -->
+      <a-text
+        id="ar-label"
+        value="MOTOR M1\nSTATUS: NORMAL"
+        position="0 1.12 0"
+        rotation="-90 0 0"
+        align="center"
+        width="2.4"
+        color="#ffffff"
+        side="double"
+      ></a-text>
     </a-marker>
 
-    <!-- Camera -->
     <a-entity camera></a-entity>
   </a-scene>
 </body>
